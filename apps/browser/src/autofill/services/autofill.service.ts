@@ -879,17 +879,20 @@ export default class AutofillService implements AutofillServiceInterface {
       pageDetails.fields.find((f) => f.opid === options.focusedFieldOpid);
     const focusedForm = focusedField?.form;
 
+    const focusedFieldHasTotpAutocomplete = focusedField
+      ? AutofillService.fieldHasAutocompleteValue(focusedField, "one-time-code")
+      : false;
     const isFocusedTotpField =
       focusedField &&
       options.allowTotpAutofill &&
-      (focusedField.type === "text" ||
-        focusedField.type === "number" ||
-        focusedField.type === "tel") &&
-      (AutofillService.fieldIsFuzzyMatch(focusedField, [
-        ...AutoFillConstants.TotpFieldNames,
-        ...AutoFillConstants.AmbiguousTotpFieldNames,
-      ]) ||
-        focusedField.autoCompleteType === "one-time-code") &&
+      (focusedFieldHasTotpAutocomplete ||
+        ((focusedField.type === "text" ||
+          focusedField.type === "number" ||
+          focusedField.type === "tel") &&
+          AutofillService.fieldIsFuzzyMatch(focusedField, [
+            ...AutoFillConstants.TotpFieldNames,
+            ...AutoFillConstants.AmbiguousTotpFieldNames,
+          ]))) &&
       !AutofillService.fieldIsFuzzyMatch(focusedField, [
         ...AutoFillConstants.RecoveryCodeFieldNames,
       ]);
@@ -1035,14 +1038,18 @@ export default class AutofillService implements AutofillServiceInterface {
           return;
         }
 
+        const fieldHasTotpAutocomplete = AutofillService.fieldHasAutocompleteValue(
+          field,
+          "one-time-code",
+        );
         const isFillableTotpField =
           options.allowTotpAutofill &&
-          ["number", "tel", "text"].some((t) => t === field.type) &&
-          (AutofillService.fieldIsFuzzyMatch(field, [
-            ...AutoFillConstants.TotpFieldNames,
-            ...AutoFillConstants.AmbiguousTotpFieldNames,
-          ]) ||
-            field.autoCompleteType === "one-time-code") &&
+          (fieldHasTotpAutocomplete ||
+            (["number", "tel", "text"].some((t) => t === field.type) &&
+              AutofillService.fieldIsFuzzyMatch(field, [
+                ...AutoFillConstants.TotpFieldNames,
+                ...AutoFillConstants.AmbiguousTotpFieldNames,
+              ]))) &&
           !AutofillService.fieldIsFuzzyMatch(field, [...AutoFillConstants.RecoveryCodeFieldNames]);
 
         const isFillableUsernameField =
@@ -2495,20 +2502,26 @@ export default class AutofillService implements AutofillServiceInterface {
 
       const fieldIsDisqualified = AutofillService.fieldHasDisqualifyingAttributeValue(f);
 
+      const fieldHasTotpAutocomplete = AutofillService.fieldHasAutocompleteValue(
+        f,
+        "one-time-code",
+      );
+
       if (
         !fieldIsDisqualified &&
         !f.disabled &&
         (canBeReadOnly || !f.readonly) &&
         (withoutForm || f.form === passwordField.form) &&
         (canBeHidden || f.viewable) &&
-        (f.type === "text" ||
-          f.type === "number" ||
-          // sites will commonly use tel in order to get the digit pad against semantic recommendations
-          f.type === "tel") &&
-        AutofillService.fieldIsFuzzyMatch(f, [
-          ...AutoFillConstants.TotpFieldNames,
-          ...AutoFillConstants.AmbiguousTotpFieldNames,
-        ]) &&
+        (fieldHasTotpAutocomplete ||
+          ((f.type === "text" ||
+            f.type === "number" ||
+            // sites will commonly use tel in order to get the digit pad against semantic recommendations
+            f.type === "tel") &&
+            AutofillService.fieldIsFuzzyMatch(f, [
+              ...AutoFillConstants.TotpFieldNames,
+              ...AutoFillConstants.AmbiguousTotpFieldNames,
+            ]))) &&
         !AutofillService.fieldIsFuzzyMatch(f, [...AutoFillConstants.RecoveryCodeFieldNames])
       ) {
         totpField = f;
@@ -2518,7 +2531,7 @@ export default class AutofillService implements AutofillServiceInterface {
             ...AutoFillConstants.TotpFieldNames,
             ...AutoFillConstants.AmbiguousTotpFieldNames,
           ]) > -1 ||
-          f.autoCompleteType === "one-time-code"
+          AutofillService.fieldHasAutocompleteValue(f, "one-time-code")
         ) {
           // We found an exact match. No need to keep looking.
           break;
@@ -2801,6 +2814,21 @@ export default class AutofillService implements AutofillServiceInterface {
       fillScript.script.push(["focus_by_opid", field.opid]);
     }
     fillScript.script.push(["fill_by_opid", field.opid, value]);
+  }
+
+  /**
+   * Identifies if the field has the specified autocomplete value present.
+   *
+   * @param field - The field to check.
+   * @param value - The autocomplete value to match.
+   */
+  private static fieldHasAutocompleteValue(field: AutofillField, value: string): boolean {
+    if (!field.autoCompleteType || !value) {
+      return false;
+    }
+
+    const tokens = field.autoCompleteType.toLowerCase().split(/\s+/);
+    return tokens.includes(value.toLowerCase());
   }
 
   /**
